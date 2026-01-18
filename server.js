@@ -1,21 +1,42 @@
 const express = require("express");
+
 const app = express();
 app.use(express.json({ limit: "1mb" }));
 
+// Store recent events in memory (debug-friendly)
 const events = [];
-const MAX_EVENTS = 500; // keep last 500
+const MAX_EVENTS = 200;
 
-app.get("/health", (req, res) => res.send("ok"));
-
-app.get("/events", (req, res) => {
-  const limit = Math.min(Number(req.query.limit || 100), 500);
-  res.json({
-    ok: true,
-    count: events.length,
-    events: events.slice(-limit).reverse(), // newest first
-  });
+// Health check
+app.get("/health", (req, res) => {
+  res.status(200).send("ok");
 });
 
+// Home page: show latest received event in the browser
+app.get("/", (req, res) => {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.status(200).send(
+    JSON.stringify(
+      {
+        ok: true,
+        message: "Latest ingested payload (refresh this page after sending POST /ingest)",
+        count: events.length,
+        latest: events.length ? events[events.length - 1] : null,
+      },
+      null,
+      2
+    )
+  );
+});
+
+// List page: show all recent events (newest first)
+app.get("/events", (req, res) => {
+  const limit = Math.min(Number(req.query.limit || 50), MAX_EVENTS);
+  const newestFirst = [...events].slice(-limit).reverse();
+  res.json({ ok: true, count: events.length, events: newestFirst });
+});
+
+// Receiver endpoint
 app.post("/ingest", (req, res) => {
   const secret = process.env.EDGE_SHARED_SECRET;
   const got = req.headers["x-edge-secret"];
@@ -27,16 +48,18 @@ app.post("/ingest", (req, res) => {
   const evt = {
     ts: new Date().toISOString(),
     ip: req.body?.meta?.src_ip ?? null,
+    attack_score: req.body?.attack_score ?? null,
     meta: req.body?.meta ?? null,
     flow: req.body?.flow ?? null,
-    attack_score: req.body?.attack_score ?? null,
+    raw: req.body ?? null,
   };
 
   events.push(evt);
-  if (events.length > MAX_EVENTS) events.splice(0, events.length - MAX_EVENTS);
+  if (events.length > MAX_EVENTS) events.shift();
 
   console.log("INGEST", evt.ts, evt.ip, evt.attack_score);
-  res.json({ ok: true });
+
+  return res.status(200).json({ ok: true });
 });
 
 const PORT = process.env.PORT || 3000;
