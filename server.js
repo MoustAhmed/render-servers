@@ -14,20 +14,26 @@ app.get("/health", (req, res) => {
 
 // Home page: show latest received event in the browser
 app.get("/", (req, res) => {
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.status(200).send(
-    JSON.stringify(
-      {
-        ok: true,
-        message: "Latest ingested payload (refresh this page after sending POST /ingest)",
-        count: events.length,
-        latest: events.length ? events[events.length - 1] : null,
-      },
-      null,
-      2
-    )
-  );
+  const limit = Math.min(Number(req.query.limit || 50), MAX_EVENTS);
+  const newestFirst = events.slice(-limit).reverse(); // stack: newest at top
+
+  res
+    .status(200)
+    .type("json")
+    .send(
+      JSON.stringify(
+        {
+          ok: true,
+          message: `Last ${newestFirst.length} ingested payloads (newest first). Use ?limit=100`,
+          count: events.length,
+          events: newestFirst,
+        },
+        null,
+        2
+      )
+    );
 });
+
 
 // List page: show all recent events (newest first)
 app.get("/events", (req, res) => {
